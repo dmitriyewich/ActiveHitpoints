@@ -1,3 +1,4 @@
+![Анимация](https://github.com/user-attachments/assets/e50e9c25-5ff1-4680-be31-e108d21db8b9)
 # ActiveHitpoints
 
 `ActiveHitpoints` показывает цвет треугольника над целью в `GTA San Andreas / SA:MP` в зависимости от здоровья игрока.
