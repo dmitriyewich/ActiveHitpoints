@@ -1,0 +1,13 @@
+build/
+.vs/
+*.user
+*.suo
+*.pdb
+*.lib
+*.exp
+*.ipdb
+*.iobj
+*.obj
+*.ilk
+*.tlog
+/ActiveHitpoints.lua
