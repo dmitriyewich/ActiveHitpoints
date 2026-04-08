@@ -11,7 +11,8 @@
       "Bash(\"C:\\\\Program Files\\\\Rizin\\\\bin\\\\rizin.exe\" -q -e \"bin.relocs.apply=false\" -c \"pd 50 @ 0x60BFCC\" \"C:\\\\Games\\\\SAMP\\\\GTA SAMP\\\\gta_sa.exe\")",
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" ActiveHitpoints.vcxproj /t:Build /p:Configuration=Release,Platform=Win32)",
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"ActiveHitpoints.vcxproj\" \"/t:Build\" \"/p:Configuration=Release;Platform=Win32\")",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\Games\\\\CODEX\\\\ActiveHitpoints\\\\ActiveHitpoints.vcxproj\" -t:Build -p:Configuration=Release -p:Platform=Win32)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\Games\\\\CODEX\\\\ActiveHitpoints\\\\ActiveHitpoints.vcxproj\" -t:Build -p:Configuration=Release -p:Platform=Win32)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\18\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\Games\\\\CODEX\\\\ActiveHitpoints\\\\ActiveHitpoints.vcxproj\" -t:Rebuild -p:Configuration=Release -p:Platform=Win32)"
     ]
   }
 }
