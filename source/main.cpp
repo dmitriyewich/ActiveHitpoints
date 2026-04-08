@@ -218,7 +218,7 @@ Color GetColorByHealth(float health) {
         return { 0, 0, 0 };
     }
     if (health <= 10.0f) {
-        return LerpColor(health / 10.0f, 0.0f, 0.0f, 0.0f, 255.0f, 0.0f, 0.0f);
+        return LerpColor(health / 10.0f, 128.0f, 0.0f, 0.0f, 255.0f, 0.0f, 0.0f);
     }
     if (health <= 50.0f) {
         return LerpColor((health - 10.0f) / 40.0f, 255.0f, 0.0f, 0.0f, 255.0f, 255.0f, 0.0f);
