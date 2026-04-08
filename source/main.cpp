@@ -214,19 +214,22 @@ Color LerpColor(float t, float fromR, float fromG, float fromB, float toR, float
 }
 
 Color GetColorByHealth(float health) {
-    if (health <= 1.0f) {
-        return { 0, 0, 0 };
+    if (health >= 100.0f) {
+        return kDefaultColor;                                              // зелёный
     }
-    if (health <= 10.0f) {
-        return LerpColor(health / 10.0f, 128.0f, 0.0f, 0.0f, 255.0f, 0.0f, 0.0f);
+    if (health > 50.0f) {
+        return LerpColor((health - 50.0f) / 50.0f,                        // 50->99: жёлтый->зелёный
+            255.0f, 255.0f, 0.0f, 25.0f, 255.0f, 25.0f);
     }
-    if (health <= 50.0f) {
-        return LerpColor((health - 10.0f) / 40.0f, 255.0f, 0.0f, 0.0f, 255.0f, 255.0f, 0.0f);
+    if (health > 10.0f) {
+        return LerpColor((health - 10.0f) / 40.0f,                        // 10->50: красный->жёлтый
+            255.0f, 0.0f, 0.0f, 255.0f, 255.0f, 0.0f);
     }
-    if (health <= 100.0f) {
-        return LerpColor((health - 50.0f) / 50.0f, 255.0f, 255.0f, 0.0f, 25.0f, 255.0f, 25.0f);
+    if (health > 0.0f) {
+        return LerpColor(health / 10.0f,                                   // 0->10: чёрный->красный
+            0.0f, 0.0f, 0.0f, 255.0f, 0.0f, 0.0f);
     }
-    return kDefaultColor;
+    return { 0, 0, 0 };                                                    // 0: чёрный
 }
 
 const SampVersionInfo* DetectSampVersion(HMODULE sampModule) {
