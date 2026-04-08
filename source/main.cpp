@@ -9,39 +9,45 @@
 
 static_assert(sizeof(void*) == 4, "ActiveHitpoints.asi must be built for Win32.");
 
-__declspec(align(4)) volatile LONG g_triangleColorPacked =
-    static_cast<LONG>(25u | (255u << 8) | (25u << 16));
+// RGB color for the triangle: 0x00RRGGBB (alpha preserved from game vertices).
+// Default = green (25, 255, 25).
+volatile DWORD g_triangleD3DColor = 0x0019FF19;
 
-extern "C" void __declspec(naked) TriangleRedHook() {
-    __asm {
-        sub esp, 4
-        fstp dword ptr [esp]
-        add esp, 4
-        xor eax, eax
-        mov al, byte ptr [g_triangleColorPacked]
-        ret
-    }
-}
+// Address of the original RwIm3DTransform used by the naked hook below.
+static const std::uintptr_t kOriginalRwIm3DTransformAddr = 0x7EF450;
 
-extern "C" void __declspec(naked) TriangleGreenHook() {
+extern "C" void __declspec(naked) HookedRwIm3DTransformForTriangle() {
+    static const std::uintptr_t kVtxColor0 = 0xC4D970;
+    static const std::uintptr_t kVtxColor1 = 0xC4D994;
+    static const std::uintptr_t kVtxColor2 = 0xC4D9B8;
     __asm {
-        sub esp, 4
-        fstp dword ptr [esp]
-        add esp, 4
-        xor eax, eax
-        mov al, byte ptr [g_triangleColorPacked + 1]
-        ret
-    }
-}
+        push eax
+        push ecx
+        push edx
+        mov eax, dword ptr [g_triangleD3DColor]     // 0x00RRGGBB (no alpha)
 
-extern "C" void __declspec(naked) TriangleBlueHook() {
-    __asm {
-        sub esp, 4
-        fstp dword ptr [esp]
-        add esp, 4
-        xor eax, eax
-        mov al, byte ptr [g_triangleColorPacked + 2]
-        ret
+        mov ecx, dword ptr [kVtxColor0]
+        mov edx, dword ptr [ecx]                     // existing color with game alpha
+        and edx, 0xFF000000                          // keep only alpha
+        or  edx, eax                                 // merge our RGB
+        mov dword ptr [ecx], edx
+
+        mov ecx, dword ptr [kVtxColor1]
+        mov edx, dword ptr [ecx]
+        and edx, 0xFF000000
+        or  edx, eax
+        mov dword ptr [ecx], edx
+
+        mov ecx, dword ptr [kVtxColor2]
+        mov edx, dword ptr [ecx]
+        and edx, 0xFF000000
+        or  edx, eax
+        mov dword ptr [ecx], edx
+
+        pop edx
+        pop ecx
+        pop eax
+        jmp dword ptr [kOriginalRwIm3DTransformAddr]
     }
 }
 
@@ -52,9 +58,7 @@ constexpr std::uintptr_t kLocalPlayerPedPointerAddress = 0x00B6F5F0;
 constexpr std::uint32_t kPlayerTargetedPedOffset = 0x79C;
 constexpr std::uint32_t kPedHealthOffset = 0x540;
 
-constexpr std::uintptr_t kTriangleRedCallAddress = 0x0060BB41;
-constexpr std::uintptr_t kTriangleGreenCallAddress = 0x0060BB5C;
-constexpr std::uintptr_t kTriangleBlueCallAddress = 0x0060BB69;
+constexpr std::uintptr_t kTriangleRwIm3DTransformCall = 0x0060C034;
 
 using IdFindFn = unsigned short(__thiscall*)(void*, const void*);
 
@@ -108,8 +112,7 @@ constexpr std::array<SampVersionInfo, 4> kSupportedVersions{ {
 } };
 
 std::atomic<bool> g_stopRequested{ false };
-Color g_lastColor{ 0xFF, 0xFF, 0xFF };
-bool g_trianglePatchApplied = false;
+bool g_triangleHookApplied = false;
 
 template <typename T>
 bool SafeRead(std::uintptr_t address, T& value) {
@@ -156,46 +159,29 @@ bool WriteRelativeCall(std::uintptr_t callAddress, const void* target) {
     return WriteMemory(callAddress, patch.data(), patch.size());
 }
 
-LONG PackColor(const Color& color) {
-    return static_cast<LONG>(
-        static_cast<std::uint32_t>(color.r) |
-        (static_cast<std::uint32_t>(color.g) << 8) |
-        (static_cast<std::uint32_t>(color.b) << 16));
+DWORD ColorToD3D(const Color& color) {
+    return (static_cast<DWORD>(color.r) << 16)
+        | (static_cast<DWORD>(color.g) << 8)
+        | static_cast<DWORD>(color.b);
 }
 
-bool ApplyTrianglePatch() {
-    if (g_trianglePatchApplied) {
+bool ApplyTriangleHook() {
+    if (g_triangleHookApplied) {
         return true;
     }
 
-    if (!WriteRelativeCall(kTriangleRedCallAddress, reinterpret_cast<const void*>(&TriangleRedHook))) {
+    if (!WriteRelativeCall(kTriangleRwIm3DTransformCall,
+            reinterpret_cast<const void*>(&HookedRwIm3DTransformForTriangle))) {
         return false;
     }
 
-    if (!WriteRelativeCall(kTriangleGreenCallAddress, reinterpret_cast<const void*>(&TriangleGreenHook))) {
-        return false;
-    }
-
-    if (!WriteRelativeCall(kTriangleBlueCallAddress, reinterpret_cast<const void*>(&TriangleBlueHook))) {
-        return false;
-    }
-
-    g_trianglePatchApplied = true;
+    g_triangleHookApplied = true;
     return true;
 }
 
-bool SetTriangleColor(const Color& color) {
-    if (!g_trianglePatchApplied) {
-        return false;
-    }
-
-    if (color == g_lastColor) {
-        return true;
-    }
-
-    InterlockedExchange(&g_triangleColorPacked, PackColor(color));
-    g_lastColor = color;
-    return true;
+void SetTriangleColor(const Color& color) {
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(&g_triangleD3DColor),
+        static_cast<LONG>(ColorToD3D(color)));
 }
 
 float Clamp01(float value) {
@@ -388,11 +374,9 @@ void WaitForGameLoad() {
 DWORD WINAPI InitializePlugin(void*) {
     WaitForGameLoad();
 
-    if (!ApplyTrianglePatch()) {
+    if (!ApplyTriangleHook()) {
         return 0;
     }
-
-    SetTriangleColor(kDefaultColor);
 
     HMODULE cachedSampModule = nullptr;
     const SampVersionInfo* cachedVersion = nullptr;
