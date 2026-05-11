@@ -65,8 +65,12 @@ using IdFindFn = unsigned short(__thiscall*)(void*, const void*);
 enum class SampVersion {
     Unknown,
     R1,
+    R2,
+    R3,
     R3_1,
-    R5_2,
+    R4,
+    R4_2,
+    R5_1,
     DL_R1,
 };
 
@@ -104,10 +108,16 @@ struct SampVersionInfo {
 constexpr Color kDefaultColor{ 25, 255, 25 };
 constexpr int kInvalidPlayerId = 65535;
 
-constexpr std::array<SampVersionInfo, 4> kSupportedVersions{ {
+// Смещения: rz-bin (AddressOfEntryPoint) и rizin (pd на CPlayerPool::Find, /x на VA глобала *CNetGame).
+// Значения выверены по samp.dll целевых сборок клиента (локальные копии с одного и того же дерева версий).
+constexpr std::array<SampVersionInfo, 8> kSupportedVersions{ {
     { 0x31DF13, SampVersion::R1, "R1", { 0x21A0F8, 0x03CD, 0x18, 0x002E, 0x00, 0x01BC, 0x010420 } },
+    { 0x3195DD, SampVersion::R2, "R2", { 0x21A100, 0x03C5, 0x08, 0x0026, 0x0C, 0x01BC, 0x0104C0 } },
+    { 0x0CC490, SampVersion::R3, "R3", { 0x26E8DC, 0x03DE, 0x08, 0x0004, 0x00, 0x01B0, 0x013570 } },
     { 0x0CC4D0, SampVersion::R3_1, "R3-1", { 0x26E8DC, 0x03DE, 0x08, 0x0004, 0x00, 0x01B0, 0x013570 } },
-    { 0x0CBC90, SampVersion::R5_2, "R5-2", { 0x26EB94, 0x03DE, 0x04, 0x1F8A, 0x10, 0x01B0, 0x0138C0 } },
+    { 0x0CBCB0, SampVersion::R4, "R4", { 0x26EA0C, 0x03DE, 0x08, 0x002E, 0x10, 0x01B0, 0x013890 } },
+    { 0x0CBCD0, SampVersion::R4_2, "R4-2", { 0x26EA0C, 0x03DE, 0x04, 0x1F8A, 0x10, 0x01B0, 0x0138C0 } },
+    { 0x0CBC90, SampVersion::R5_1, "R5-1", { 0x26EB94, 0x03DE, 0x04, 0x1F8A, 0x10, 0x01B0, 0x0138C0 } },
     { 0x0FDB60, SampVersion::DL_R1, "DL-R1", { 0x2ACA24, 0x03DE, 0x08, 0x0026, 0x08, 0x01B0, 0x0137C0 } },
 } };
 
