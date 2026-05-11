@@ -2,12 +2,31 @@
 #define NOMINMAX
 #include <windows.h>
 
-#include <array>
-#include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 static_assert(sizeof(void*) == 4, "ActiveHitpoints.asi must be built for Win32.");
+
+extern "C" int _fltused = 0;
+
+#pragma function(memcpy, memset)
+extern "C" void* __cdecl memcpy(void* dst, const void* src, std::size_t size) {
+    auto* out = static_cast<unsigned char*>(dst);
+    const auto* in = static_cast<const unsigned char*>(src);
+    for (std::size_t i = 0; i < size; ++i) {
+        out[i] = in[i];
+    }
+    return dst;
+}
+
+extern "C" void* __cdecl memset(void* dst, int value, std::size_t size) {
+    auto* out = static_cast<unsigned char*>(dst);
+    const auto v = static_cast<unsigned char>(value);
+    for (std::size_t i = 0; i < size; ++i) {
+        out[i] = v;
+    }
+    return dst;
+}
 
 // RGB color for the triangle: 0x00RRGGBB (alpha preserved from game vertices).
 // Default = green (25, 255, 25).
@@ -107,10 +126,11 @@ struct SampVersionInfo {
 
 constexpr Color kDefaultColor{ 25, 255, 25 };
 constexpr int kInvalidPlayerId = 65535;
+constexpr int kNumSupportedVersions = 8;
 
 // Смещения: rz-bin (AddressOfEntryPoint) и rizin (pd на CPlayerPool::Find, /x на VA глобала *CNetGame).
 // Значения выверены по samp.dll целевых сборок клиента (локальные копии с одного и того же дерева версий).
-constexpr std::array<SampVersionInfo, 8> kSupportedVersions{ {
+static const SampVersionInfo kSupportedVersions[kNumSupportedVersions] = {
     { 0x31DF13, SampVersion::R1, "R1", { 0x21A0F8, 0x03CD, 0x18, 0x002E, 0x00, 0x01BC, 0x010420 } },
     { 0x3195DD, SampVersion::R2, "R2", { 0x21A100, 0x03C5, 0x08, 0x0026, 0x0C, 0x01BC, 0x0104C0 } },
     { 0x0CC490, SampVersion::R3, "R3", { 0x26E8DC, 0x03DE, 0x08, 0x0004, 0x00, 0x01B0, 0x013570 } },
@@ -119,21 +139,93 @@ constexpr std::array<SampVersionInfo, 8> kSupportedVersions{ {
     { 0x0CBCD0, SampVersion::R4_2, "R4-2", { 0x26EA0C, 0x03DE, 0x04, 0x1F8A, 0x10, 0x01B0, 0x0138C0 } },
     { 0x0CBC90, SampVersion::R5_1, "R5-1", { 0x26EB94, 0x03DE, 0x04, 0x1F8A, 0x10, 0x01B0, 0x0138C0 } },
     { 0x0FDB60, SampVersion::DL_R1, "DL-R1", { 0x2ACA24, 0x03DE, 0x08, 0x0026, 0x08, 0x01B0, 0x0137C0 } },
-} };
+};
 
-std::atomic<bool> g_stopRequested{ false };
+volatile LONG g_stopRequested = 0;
 bool g_triangleHookApplied = false;
+
+static bool IsRangeReadable(const unsigned char* first, std::size_t size) {
+    if (!first || size == 0) {
+        return false;
+    }
+    const unsigned char* cur = first;
+    const unsigned char* const limit = first + size;
+    while (cur < limit) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery(cur, &mbi, sizeof(mbi)) < sizeof(mbi)) {
+            return false;
+        }
+        if (mbi.State != MEM_COMMIT) {
+            return false;
+        }
+        if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) {
+            return false;
+        }
+        constexpr DWORD kReadMask = PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READ
+            | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+        if ((mbi.Protect & kReadMask) == 0) {
+            return false;
+        }
+        const auto* regBegin = reinterpret_cast<const unsigned char*>(mbi.BaseAddress);
+        const auto* regEnd = regBegin + mbi.RegionSize;
+        if (cur < regBegin || cur >= regEnd) {
+            return false;
+        }
+        if (limit <= regEnd) {
+            return true;
+        }
+        cur = regEnd;
+    }
+    return true;
+}
+
+static bool IsRangeExecutable(const unsigned char* first, std::size_t size) {
+    if (!first || size == 0) {
+        return false;
+    }
+    const unsigned char* cur = first;
+    const unsigned char* const limit = first + size;
+    while (cur < limit) {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery(cur, &mbi, sizeof(mbi)) < sizeof(mbi)) {
+            return false;
+        }
+        if (mbi.State != MEM_COMMIT) {
+            return false;
+        }
+        if (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) {
+            return false;
+        }
+        constexpr DWORD kExecMask = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
+        if ((mbi.Protect & kExecMask) == 0) {
+            return false;
+        }
+        const auto* regBegin = reinterpret_cast<const unsigned char*>(mbi.BaseAddress);
+        const auto* regEnd = regBegin + mbi.RegionSize;
+        if (cur < regBegin || cur >= regEnd) {
+            return false;
+        }
+        if (limit <= regEnd) {
+            return true;
+        }
+        cur = regEnd;
+    }
+    return true;
+}
 
 template <typename T>
 bool SafeRead(std::uintptr_t address, T& value) {
-    __try {
-        value = *reinterpret_cast<const T*>(address);
-        return true;
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
+    if (address == 0) {
         value = T{};
         return false;
     }
+    const auto* p = reinterpret_cast<const unsigned char*>(address);
+    if (!IsRangeReadable(p, sizeof(T))) {
+        value = T{};
+        return false;
+    }
+    value = *reinterpret_cast<const T*>(p);
+    return true;
 }
 
 bool WriteMemory(std::uintptr_t address, const void* data, std::size_t size) {
@@ -146,7 +238,7 @@ bool WriteMemory(std::uintptr_t address, const void* data, std::size_t size) {
         return false;
     }
 
-    std::memcpy(reinterpret_cast<void*>(address), data, size);
+    memcpy(reinterpret_cast<void*>(address), data, size);
     FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(address), size);
 
     DWORD restoredProtect = 0;
@@ -163,16 +255,15 @@ bool WriteRelativeCall(std::uintptr_t callAddress, const void* target) {
         return false;
     }
 
-    std::array<std::uint8_t, 5> patch{ { 0xE8, 0, 0, 0, 0 } };
+    unsigned char patch[5];
+    patch[0] = 0xE8;
     const auto relative32 = static_cast<std::int32_t>(relative);
-    std::memcpy(patch.data() + 1, &relative32, sizeof(relative32));
-    return WriteMemory(callAddress, patch.data(), patch.size());
+    memcpy(patch + 1, &relative32, sizeof(relative32));
+    return WriteMemory(callAddress, patch, sizeof(patch));
 }
 
 DWORD ColorToD3D(const Color& color) {
-    return (static_cast<DWORD>(color.r) << 16)
-        | (static_cast<DWORD>(color.g) << 8)
-        | static_cast<DWORD>(color.b);
+    return (static_cast<DWORD>(color.r) << 16) | (static_cast<DWORD>(color.g) << 8) | static_cast<DWORD>(color.b);
 }
 
 bool ApplyTriangleHook() {
@@ -259,9 +350,9 @@ const SampVersionInfo* DetectSampVersion(HMODULE sampModule) {
     }
 
     const DWORD entryPoint = ntHeaders->OptionalHeader.AddressOfEntryPoint;
-    for (const auto& version : kSupportedVersions) {
-        if (version.entryPointRva == entryPoint) {
-            return &version;
+    for (int i = 0; i < kNumSupportedVersions; ++i) {
+        if (kSupportedVersions[i].entryPointRva == entryPoint) {
+            return &kSupportedVersions[i];
         }
     }
 
@@ -295,15 +386,14 @@ int FindPlayerId(HMODULE sampModule, const SampVersionInfo& version, std::uint32
     }
 
     const auto base = reinterpret_cast<std::uintptr_t>(sampModule);
-    const auto findId = reinterpret_cast<IdFindFn>(base + version.offsets.idFindOffset);
-    unsigned short playerId = static_cast<unsigned short>(kInvalidPlayerId);
+    const auto findIdAddr = base + version.offsets.idFindOffset;
+    const auto* findIdBytes = reinterpret_cast<const unsigned char*>(findIdAddr);
+    if (!IsRangeExecutable(findIdBytes, 16)) {
+        return -1;
+    }
 
-    __try {
-        playerId = findId(reinterpret_cast<void*>(playerPool), gtaPed);
-    }
-    __except (EXCEPTION_EXECUTE_HANDLER) {
-        playerId = static_cast<unsigned short>(kInvalidPlayerId);
-    }
+    const auto findId = reinterpret_cast<IdFindFn>(findIdAddr);
+    const unsigned short playerId = findId(reinterpret_cast<void*>(playerPool), gtaPed);
 
     return playerId != static_cast<unsigned short>(kInvalidPlayerId) ? static_cast<int>(playerId) : -1;
 }
@@ -379,7 +469,7 @@ bool ResolveTargetHealth(
 
 void WaitForGameLoad() {
     const auto* gtaLoadState = reinterpret_cast<volatile DWORD*>(kGtaLoadStateAddress);
-    while (!g_stopRequested.load() && *gtaLoadState < 9) {
+    while (InterlockedCompareExchange(&g_stopRequested, 0, 0) == 0 && *gtaLoadState < 9) {
         Sleep(10);
     }
 }
@@ -394,7 +484,7 @@ DWORD WINAPI InitializePlugin(void*) {
     HMODULE cachedSampModule = nullptr;
     const SampVersionInfo* cachedVersion = nullptr;
 
-    while (!g_stopRequested.load()) {
+    while (InterlockedCompareExchange(&g_stopRequested, 0, 0) == 0) {
         std::uint32_t localPed = 0;
         if (!ReadLocalPlayerPed(localPed)) {
             SetTriangleColor(kDefaultColor);
@@ -453,7 +543,7 @@ BOOL APIENTRY DllMain(HMODULE module, DWORD reason, LPVOID) {
             CloseHandle(thread);
         }
     } else if (reason == DLL_PROCESS_DETACH) {
-        g_stopRequested.store(true);
+        InterlockedExchange(&g_stopRequested, 1);
     }
 
     return TRUE;
